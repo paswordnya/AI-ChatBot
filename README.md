@@ -1,9 +1,7 @@
 # chat-api
 
-Standalone `getChatList` service. Deliberately separate from `backend/` and
-`frontend/` in this repo — its own FastAPI app, its own SQLAlchemy models,
-its own Postgres database. Nothing in `backend/` or `frontend/` was touched
-to build this.
+Standalone `getChatList` / `sendChat` service: its own FastAPI app, its own
+SQLAlchemy models, its own Postgres database.
 
 ## What it does
 
@@ -55,15 +53,34 @@ Missing or wrong key → `401`. `/health` is exempt (no key needed).
 
 ```bash
 createdb chat_api   # once, if it doesn't already exist
-cd chat-api
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-# then edit .env: set API_KEY to a real secret —
-#   python -c "import secrets; print(secrets.token_urlsafe(32))"
-# DATABASE_URL/LLM_* defaults are already fine for local dev (Postgres on
-# localhost, LM Studio primary at :1234, Ollama backup at :11434).
+```
 
+Create a `.env` file in the project root (it is git-ignored):
+
+```bash
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/chat_api
+
+# Required: every /chat/* request must send this as the X-API-Key header.
+# Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+API_KEY=<your-secret>
+
+# Local model servers for POST /chat/{session_id}/reply and /send.
+LLM_BASE_URL=http://localhost:1234/v1
+LLM_API_KEY=lm-studio
+LLM_MODEL=google/gemma-4-e4b
+
+LLM_FALLBACK_BASE_URL=http://localhost:11434/v1
+LLM_FALLBACK_API_KEY=ollama
+LLM_FALLBACK_MODEL=llama3.2
+```
+
+Only `API_KEY` is required; the other values shown are the defaults for local
+development (Postgres on localhost, LM Studio primary at `:1234`, Ollama backup
+at `:11434`).
+
+```bash
 python scripts/migrate.py       # creates chat_messages table
 python scripts/seed_demo.py     # optional: seeds session "demo-session-1" with the sample conversation
 ```
