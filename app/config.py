@@ -17,4 +17,8 @@ class Settings(BaseSettings):
     llm_fallback_api_key: str = "ollama"
     llm_fallback_model: str = "llama3.2"
 
+    llm_fallback2_base_url: str = "http://localhost:11434/v1"
+    llm_fallback2_api_key: str = "ollama"
+    llm_fallback2_model: str = "llama3.2:1b"
+
 settings = Settings()

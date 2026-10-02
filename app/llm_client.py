@@ -5,9 +5,9 @@ Studio, ...) via stdlib urllib — same low-dependency convention as
 pip-voice-ai-dashboard/backend/app/provider_probe.py, which this module
 otherwise has no connection to (separate project, see README.md).
 
-LM Studio (settings.llm_*) is primary; Ollama (settings.llm_fallback_*) is
-only tried as backup if LM Studio's two attempts both fail — not load
-balancing, a strict primary/backup order.
+LM Studio (settings.llm_*) is primary; Ollama (settings.llm_fallback_*, then
+settings.llm_fallback2_*) are tried in order only if the previous model's two
+attempts both fail — not load balancing, a strict largest-to-smallest order.
 
 The model is asked to answer with structured output — one JSON object
 shaped like a single item of getChatList's messages[] (see CHIP_CATALOG
@@ -204,28 +204,30 @@ def _try_provider(base_url: str, api_key: str, model: str, seed_messages: list[d
             })
     raise last_error
 
+def _provider_chain() -> list[tuple[str, str, str]]:
+    return [
+        (settings.llm_base_url, settings.llm_api_key, settings.llm_model),
+        (settings.llm_fallback_base_url, settings.llm_fallback_api_key, settings.llm_fallback_model),
+        (settings.llm_fallback2_base_url, settings.llm_fallback2_api_key, settings.llm_fallback2_model),
+    ]
+
 def generate_reply(history: list[dict], user_text: str) -> dict:
-    """Ask a local model for the next assistant turn. Tries LM Studio
-    (settings.llm_*) first; if both its attempts fail, tries Ollama
-    (settings.llm_fallback_*) as backup; if that also fails, degrades to
-    FALLBACK_MESSAGE. Never raises — a chat endpoint shouldn't 500 just
-    because every local model happens to be down."""
+    """Ask a local model for the next assistant turn. Tries each model in
+    _provider_chain() in order, largest to smallest (LM Studio primary, then
+    the two Ollama backups); a model is skipped only after both of its
+    attempts fail. If every model fails, degrades to FALLBACK_MESSAGE.
+    Never raises — a chat endpoint shouldn't 500 just because every local
+    model happens to be down."""
     seed_messages = (
         [{"role": "system", "content": SYSTEM_PROMPT}]
         + _history_to_chat_messages(history)
         + [{"role": "user", "content": user_text}]
     )
 
-    try:
-        return _try_provider(settings.llm_base_url, settings.llm_api_key, settings.llm_model, seed_messages)
-    except _CALL_ERRORS as primary_error:
-        print(f"[llm_client] primary ({settings.llm_base_url}) failed, trying fallback: {primary_error!r}")
-
-    try:
-        return _try_provider(
-            settings.llm_fallback_base_url, settings.llm_fallback_api_key, settings.llm_fallback_model, seed_messages
-        )
-    except _CALL_ERRORS as fallback_error:
-        print(f"[llm_client] fallback ({settings.llm_fallback_base_url}) also failed: {fallback_error!r}")
+    for tier, (base_url, api_key, model) in enumerate(_provider_chain(), start=1):
+        try:
+            return _try_provider(base_url, api_key, model, seed_messages)
+        except _CALL_ERRORS as error:
+            print(f"[llm_client] tier {tier} ({base_url}, {model}) failed: {error!r}")
 
     return dict(FALLBACK_MESSAGE)

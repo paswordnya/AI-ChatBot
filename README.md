@@ -30,7 +30,7 @@ Every `/chat/*` route requires an `X-API-Key` header (see Auth below);
   reading as a transcript entry).
 
 `/reply` and `/send` both call a local model (LM Studio primary, Ollama
-backup — see `app/llm_client.py`) for structured JSON matching the same
+backups — see `app/llm_client.py`) for structured JSON matching the same
 message shape, and both degrade to a `whatsapp_only` fallback message
 instead of a 5xx if every local model is unreachable.
 
@@ -74,6 +74,10 @@ LLM_MODEL=google/gemma-4-e4b
 LLM_FALLBACK_BASE_URL=http://localhost:11434/v1
 LLM_FALLBACK_API_KEY=ollama
 LLM_FALLBACK_MODEL=llama3.2
+
+LLM_FALLBACK2_BASE_URL=http://localhost:11434/v1
+LLM_FALLBACK2_API_KEY=ollama
+LLM_FALLBACK2_MODEL=llama3.2:1b
 ```
 
 Only `API_KEY` is required; the other values shown are the defaults for local

@@ -53,11 +53,13 @@ Urutan dicoba dari model terbesar ke terkecil, lalu pesan statis.
 | Urutan | Model | Server | Variabel `.env` | Perkiraan ukuran |
 |---|---|---|---|---|
 | 1 (primary) | `google/gemma-4-e4b` | LM Studio, `http://localhost:1234/v1` | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | ~4B parameter efektif (dari nama `e4b`) |
-| 2 (backup) | `llama3.2` | Ollama, `http://localhost:11434/v1` | `LLM_FALLBACK_BASE_URL`, `LLM_FALLBACK_API_KEY`, `LLM_FALLBACK_MODEL` | ~3B (tag default Ollama) |
-| 3 (terakhir) | pesan statis `whatsapp_only` | tanpa model | - | - |
+| 2 (backup) | `llama3.2` | Ollama, `http://localhost:11434/v1` | `LLM_FALLBACK_BASE_URL`, `LLM_FALLBACK_API_KEY`, `LLM_FALLBACK_MODEL` | 3.2B (terukur di Ollama) |
+| 3 (backup kedua) | `llama3.2:1b` | Ollama, `http://localhost:11434/v1` | `LLM_FALLBACK2_BASE_URL`, `LLM_FALLBACK2_API_KEY`, `LLM_FALLBACK2_MODEL` | ~1B |
+| 4 (terakhir) | pesan statis `whatsapp_only` | tanpa model | - | - |
 
-Ukuran adalah perkiraan dari nama model dan tag default, bukan hasil
-pengukuran. Cek ukuran sebenarnya di LM Studio dan `ollama list`.
+Ukuran `gemma-4-e4b` dan `llama3.2:1b` adalah perkiraan dari nama model,
+bukan hasil pengukuran. Cek di LM Studio dan `ollama list`. Model `llama3.2:1b`
+harus di-pull dulu: `ollama pull llama3.2:1b`.
 
 ### Alur switching (`app/llm_client.py`)
 
@@ -73,19 +75,23 @@ request /reply atau /send
       percobaan 1 -> gagal? -> percobaan 2 (+ pesan koreksi)
    |  kedua percobaan gagal
    v
-[3] Pesan statis whatsapp_only (arahkan user ke WhatsApp)
+[3] Ollama: llama3.2:1b
+      percobaan 1 -> gagal? -> percobaan 2 (+ pesan koreksi)
+   |  kedua percobaan gagal
+   v
+[4] Pesan statis whatsapp_only (arahkan user ke WhatsApp)
 ```
 
 - Tiap model dicoba maksimal 2 kali. Percobaan kedua menambahkan pesan koreksi
   agar model menjawab JSON saja.
 - Dianggap gagal bila: server tidak terjangkau, timeout (`LLM_TIMEOUT_S`,
   default 30 detik), respons bukan JSON, `chip` tidak dikenal, atau `text` kosong.
-- Ini urutan ketat primary lalu backup, bukan load balancing. Ollama hanya
-  dipanggil bila LM Studio gagal dua kali.
+- Ini urutan ketat dari model terbesar ke terkecil, bukan load balancing. Model
+  berikutnya hanya dipanggil bila model sebelumnya gagal dua kali.
 - `generate_reply` tidak pernah melempar error. Bila semua model gagal, endpoint
   tetap membalas `200` dengan pesan `whatsapp_only` (WhatsApp +62 813-6873-703),
   bukan `5xx`.
-- Kegagalan tiap tahap dicetak ke log (`[llm_client] primary ... failed`).
+- Kegagalan tiap tahap dicetak ke log (`[llm_client] tier N (...) failed`).
 
 ### Mengganti model
 
@@ -94,11 +100,12 @@ Ubah `.env`, lalu restart server:
 ```bash
 LLM_MODEL=google/gemma-4-e4b
 LLM_FALLBACK_MODEL=llama3.2
+LLM_FALLBACK2_MODEL=llama3.2:1b
 ```
 
 Agar urutan tetap "besar ke kecil", isi `LLM_MODEL` dengan model yang lebih
-besar dari `LLM_FALLBACK_MODEL`. Kode saat ini hanya mendukung dua tingkat
-model. Tingkat ketiga membutuhkan perubahan di `generate_reply`.
+besar dari `LLM_FALLBACK_MODEL`, dan seterusnya. Daftar tingkat ada di
+`_provider_chain()` di `app/llm_client.py`.
 
 ## Konfigurasi
 
@@ -108,6 +115,7 @@ model. Tingkat ketiga membutuhkan perubahan di `generate_reply`.
 | `DATABASE_URL` | `postgresql+psycopg2://postgres:postgres@localhost:5432/chat_api` | Postgres. |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | LM Studio `:1234`, `lm-studio`, `google/gemma-4-e4b` | Model primary. |
 | `LLM_FALLBACK_BASE_URL` / `LLM_FALLBACK_API_KEY` / `LLM_FALLBACK_MODEL` | Ollama `:11434`, `ollama`, `llama3.2` | Model backup. |
+| `LLM_FALLBACK2_BASE_URL` / `LLM_FALLBACK2_API_KEY` / `LLM_FALLBACK2_MODEL` | Ollama `:11434`, `ollama`, `llama3.2:1b` | Model backup kedua (terkecil). |
 | `LLM_TIMEOUT_S` | `30.0` | Batas waktu per panggilan model. |
 | `CORS_ORIGINS` | `["*"]` | Origin yang diizinkan. Batasi sebelum produksi. |
 
